@@ -32,14 +32,29 @@ def convert_to_base_form(text):
         base_forms.append(base_form)
     return ' '.join(base_forms)
 
-# Function to check synonyms and update sentiment class
-def check_synonyms(word, synonym_df, current_sentiment):
-    synonyms = list(synonym_df[synonym_df['Word'] == word].iloc[:, 1:].values.flatten())
-    for synonym in synonyms:
-        if synonym in synonym_df['Word'].values:
-            if synonym_df[synonym_df['Word'] == synonym]['Sentiment'].values[0] != current_sentiment:
-                return False
-    return True
+# Load the synonym dataset
+synonym_df = pd.read_csv('sameMeaningWords.csv')
+
+# Function to classify words based on dialectical context
+def classify_dialectical_sentiment(word, dialect):
+    # Your implementation to classify sentiment based on dialect
+    pass
+
+# Function to replace words in tweets with their synonyms from the CSV file
+def replace_synonyms(tweet, synonym_df, city):
+    words = tweet.split()
+    replaced_tweet = []
+    for word in words:
+        synonyms = synonym_df.loc[synonym_df['Word'] == word, 'Synonym1':'Synonym5'].values.flatten()
+        if len(synonyms) > 0:
+            # Get the sentiment for each synonym based on the dialectical context (city)
+            synonym_sentiments = [classify_dialectical_sentiment(synonym, city) for synonym in synonyms]
+            # Choose the synonym with the most frequent sentiment
+            chosen_synonym = max(set(synonym_sentiments), key=synonym_sentiments.count)
+            replaced_tweet.append(chosen_synonym)  # Replace with the chosen synonym
+        else:
+            replaced_tweet.append(word)
+    return ' '.join(replaced_tweet)
 
 # URLs of the zip files
 urls = ['http://www.saifmohammad.com/WebDocs/AIT-2018/AIT2018-DATA/EI-reg/English/EI-reg-En-train.zip']
@@ -109,23 +124,22 @@ combined_data['Tweet'] = combined_data['Tweet'].apply(convert_to_base_form)
 # Apply diacritic manipulation to Arabic tweets
 combined_data['Tweet'] = combined_data['Tweet'].apply(remove_diacritics)
 
-# Load the synonym dataset
-synonym_df = pd.read_csv('sameMeaningWords.csv')
-
-# Function to replace words in tweets with their synonyms from the CSV file
-def replace_synonyms(tweet, synonym_df):
-    words = tweet.split()
-    replaced_tweet = []
-    for word in words:
-        synonyms = synonym_df.loc[synonym_df['Word'] == word, 'Synonym1':'Synonym5'].values.flatten()
-        if len(synonyms) > 0:
-            replaced_tweet.append(synonyms[0])  # Replace with the first synonym for simplicity
-        else:
-            replaced_tweet.append(word)
-    return ' '.join(replaced_tweet)
-
 # Replace words with synonyms and update sentiment class
-combined_data['Tweet'] = combined_data.apply(lambda row: replace_synonyms(row['Tweet'], synonym_df) if row['Affect Dimension'] == 'negative' else row['Tweet'], axis=1)
+combined_data['Tweet'] = combined_data.apply(lambda row: replace_synonyms(row['Tweet'], synonym_df, city='Haifa'), axis=1)
+
+# Function to check synonyms and update sentiment class
+def check_synonyms(tweet, synonym_df, current_sentiment):
+    words = tweet.split()
+    for word in words:
+        synonyms = list(synonym_df[synonym_df['Word'] == word].iloc[:, 1:].values.flatten())
+        for synonym in synonyms:
+            if synonym in synonym_df['Word'].values:
+                if synonym_df[synonym_df['Word'] == synonym]['Sentiment'].values[0] != current_sentiment:
+                    return False
+    return True
+
+# Apply double testing for neutral words and update sentiment class
+combined_data['Affect Dimension'] = combined_data.apply(lambda row: row['Affect Dimension'] if check_synonyms(row['Tweet'], synonym_df, row['Affect Dimension']) else 'positive', axis=1)
 
 # Count the number of tweets for each sentiment class
 sentiment_counts = combined_data['Affect Dimension'].value_counts()
